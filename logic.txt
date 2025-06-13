@@ -1,0 +1,44 @@
+Goal: Handle complex boycott logic with full integrity and minimal duplication
+✅ Overview of Behavior
+A single user may:
+
+Boycott a company for one or more causes
+Provide a personal reason
+Submit all of this in a single POST request
+
+🧠 Business Rules (with Explanations)
+1. Deduplication of cause-based boycotts
+    Before inserting a user_boycotts record for a given (user_id, company_id, cause_id):
+        Query the user_boycotts table to check if a record already exists.
+        If it does, skip this boycott (and don’t update causes, cause_company_stats).
+
+2. One boycott per user–company pair
+    Before incrementing the company’s boycott_count:
+        Query if there are any existing user_boycotts for this (user_id, company_id) already.
+        Only increment if this is the first boycott from that user for that company.
+
+3. user_causes logic
+    For each cause_id, if the user is not already following the cause:
+        Insert a user_causes record with user_id, cause_id, and timestamp.
+
+4. Personal reason handling
+    If personal_reason is present:
+        Add one user_boycotts record for (user_id, company_id, personal_reason).
+        Do not include a cause_id.
+
+5. Transaction logic
+    To stay within DynamoDB’s 25-operation limit:
+        Each user_boycotts record gets its own List<TransactWriteItem> set.
+        Only actions in that set get committed atomically.
+        Report how many succeeded or failed in the response.
+
+🛡 Error Handling Strategy
+        If some boycotts fail and others succeed:
+            Respond with 207 Multi-Status (or use 200 and include error detail in body)
+            Response body could include:
+            {
+                "message": "Some boycotts were successfully recorded.",
+                "errors": [
+                    { "cause_id": "...", "reason": "Already boycotted" }
+                ]
+            }
