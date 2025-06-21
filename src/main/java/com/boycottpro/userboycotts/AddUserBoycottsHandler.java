@@ -6,8 +6,8 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 
 import com.boycottpro.userboycotts.model.AddBoycottForm;
-import com.boycottpro.userboycotts.utilities.CauseValidator;
-import com.boycottpro.userboycotts.utilities.CompanyValidator;
+import com.boycottpro.utilities.CauseValidator;
+import com.boycottpro.utilities.CompanyValidator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
@@ -15,7 +15,7 @@ import software.amazon.awssdk.services.dynamodb.model.*;
 import java.time.Instant;
 import java.util.*;
 
-    public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
+public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
     private final DynamoDbClient dynamoDb;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -41,10 +41,10 @@ import java.util.*;
                 return response(400, "Either reasons or personal_reason must be provided.");
             }
             // validate company_id
-            CompanyValidator companyValidator = new CompanyValidator(this.dynamoDb,"user_boycotts");
+            CompanyValidator companyValidator = new CompanyValidator(this.dynamoDb,"companies");
             boolean validCompany = companyValidator.validateCompanyName(companyId,companyName);
             if(!validCompany) {
-                System.out.println("comapny_name do not match!");
+                System.out.println("company_name do not match!");
                 throw new RuntimeException("not a valid company!");
             }
             String now = Instant.now().toString();
@@ -107,21 +107,41 @@ import java.util.*;
                     System.out.println("causes added");
                 }
                 // cause_company_stats update
-                actions.add(TransactWriteItem.builder()
-                        .update(Update.builder()
-                                .tableName("cause_company_stats")
-                                .key(Map.of(
-                                        "cause_id", AttributeValue.fromS(causeId),
-                                        "cause_desc", AttributeValue.fromS(reason.getCause_desc()),
-                                        "company_id", AttributeValue.fromS(companyId),
-                                        "company_name", AttributeValue.fromS(companyName)
-                                ))
-                                .updateExpression("SET boycott_count = if_not_exists(boycott_count, :zero) + :inc")
-                                .expressionAttributeValues(Map.of(
-                                        ":zero", AttributeValue.fromN("0"),
-                                        ":inc", AttributeValue.fromN("1")
-                                ))
-                                .build()).build());
+                if (findCauseCompanyRecord(causeId, companyId)) {
+                    // update existing record
+                    actions.add(
+                            TransactWriteItem.builder()
+                                    .update(Update.builder()
+                                            .tableName("cause_company_stats")
+                                            .key(Map.of(
+                                                    "cause_id", AttributeValue.fromS(causeId),
+                                                    "company_id", AttributeValue.fromS(companyId)
+                                            ))
+                                            .updateExpression("SET boycott_count = if_not_exists(boycott_count, :zero) + :inc")
+                                            .expressionAttributeValues(Map.of(
+                                                    ":zero", AttributeValue.fromN("0"),
+                                                    ":inc", AttributeValue.fromN("1")
+                                            ))
+                                            .build())
+                                    .build()
+                    );
+                } else {
+                    // insert new record
+                    actions.add(
+                            TransactWriteItem.builder()
+                                    .put(Put.builder()
+                                            .tableName("cause_company_stats")
+                                            .item(Map.of(
+                                                    "cause_id", AttributeValue.fromS(causeId),
+                                                    "company_id", AttributeValue.fromS(companyId),
+                                                    "company_name", AttributeValue.fromS(companyName),
+                                                    "cause_desc", AttributeValue.fromS(reason.getCause_desc()),
+                                                    "boycott_count", AttributeValue.fromN("1")
+                                            ))
+                                            .build())
+                                    .build()
+                    );
+                }
                 System.out.println("cause_company_stats added");
                 try {
                     // Execute this transaction
@@ -134,6 +154,7 @@ import java.util.*;
                     anySuccess = true;
                     System.out.println("transaction successful for cause = " + causeId);
                 } catch (RuntimeException e) {
+                    e.printStackTrace();
                     errors.add("Failed to record boycott for cause: " + causeId + " -> " + e.getMessage());
                 }
             }
@@ -150,6 +171,7 @@ import java.util.*;
                                                 "user_id", AttributeValue.fromS(userId),
                                                 "company_id", AttributeValue.fromS(companyId),
                                                 "company_name", AttributeValue.fromS(companyName),
+                                                "company_cause_id", AttributeValue.fromS(personalReason+"#"+companyId),
                                                 "timestamp", AttributeValue.fromS(now),
                                                 "personal_reason", AttributeValue.fromS(personalReason)
                                         )).build()).build()
@@ -163,6 +185,7 @@ import java.util.*;
                     anySuccess = true;
                     System.out.println("transaction successful for personal reason = " + personalReason);
                 } catch (RuntimeException e) {
+                    e.printStackTrace();
                     errors.add("Failed to record boycott for personal reason: " + personalReason + " -> " + e.getMessage());
                 }
             }
@@ -173,9 +196,8 @@ import java.util.*;
                 dynamoDb.updateItem(UpdateItemRequest.builder()
                         .tableName("companies")
                         .key(Map.of("company_id", AttributeValue.fromS(companyId)))
-                        .updateExpression("SET boycott_count = if_not_exists(boycott_count, :zero) + :inc")
+                        .updateExpression("SET boycott_count = boycott_count + :inc")
                         .expressionAttributeValues(Map.of(
-                                ":zero", AttributeValue.fromN("0"),
                                 ":inc", AttributeValue.fromN("1")
                         )).build());
             }
@@ -200,31 +222,54 @@ import java.util.*;
                 .withBody(body);
     }
 
+    public boolean findCauseCompanyRecord(String causeId, String companyId) {
+        try {
+            GetItemRequest request = GetItemRequest.builder()
+                    .tableName("cause_company_stats")
+                    .key(Map.of(
+                            "cause_id", AttributeValue.fromS(causeId),
+                            "company_id", AttributeValue.fromS(companyId)
+                    ))
+                    .build();
+
+            GetItemResponse response = dynamoDb.getItem(request);
+            return response.hasItem();
+
+        } catch (DynamoDbException e) {
+            // Optional: log the exception or rethrow
+            return false;
+        }
+    }
+
     private boolean userHasAnyBoycott(String userId, String companyId) {
-        System.out.println("checking for previous boycotts for this company");
-        QueryRequest request = QueryRequest.builder()
-                .tableName("user_boycotts")
-                .keyConditionExpression("user_id = :uid AND company_id = :cid")
-                .expressionAttributeValues(Map.of(
-                        ":uid", AttributeValue.builder().s(userId).build(),
-                        ":cid", AttributeValue.builder().s(companyId).build()
-                ))
-                .limit(1)
-                .build();
-        System.out.println("checked for previous boycotts for this company");
-        return !dynamoDb.query(request).items().isEmpty();
+        try {
+            QueryRequest request = QueryRequest.builder()
+                    .tableName("user_boycotts")
+                    .keyConditionExpression("user_id = :uid")
+                    .expressionAttributeValues(Map.of(
+                            ":uid", AttributeValue.builder().s(userId).build()
+                    ))
+                    .build();
+
+            QueryResponse response = dynamoDb.query(request);
+
+            return response.items().stream()
+                    .anyMatch(item -> companyId.equals(item.get("company_id").s()));
+
+        } catch (DynamoDbException e) {
+            System.err.println("DynamoDB query failed: " + e.getMessage());
+            return false;
+        }
     }
 
     private boolean userHasSpecificBoycott(String userId, String companyId, String causeId) {
         System.out.println("checking for specific boycotts for this company");
         QueryRequest request = QueryRequest.builder()
                 .tableName("user_boycotts")
-                .keyConditionExpression("user_id = :uid AND company_id = :cid")
-                .filterExpression("cause_id = :caid")
+                .keyConditionExpression("user_id = :uid AND company_cause_id = :caid")
                 .expressionAttributeValues(Map.of(
                         ":uid", AttributeValue.builder().s(userId).build(),
-                        ":cid", AttributeValue.builder().s(companyId).build(),
-                        ":caid", AttributeValue.builder().s(causeId).build()
+                        ":caid", AttributeValue.builder().s(companyId+"#"+causeId).build()
                 ))
                 .limit(1)
                 .build();
@@ -232,23 +277,30 @@ import java.util.*;
         return !dynamoDb.query(request).items().isEmpty();
     }
 
-    private boolean userHasPersonalReason(String userId, String companyId, String personalReason) {
-        // this method is checking to see if the user already has the SAME personal reason
-        System.out.println("checking for personal reason for this company");
-        QueryRequest request = QueryRequest.builder()
-                .tableName("user_boycotts")
-                .keyConditionExpression("user_id = :uid AND company_id = :cid")
-                .filterExpression("personal_reason = :reason")
-                .expressionAttributeValues(Map.of(
-                        ":uid", AttributeValue.builder().s(userId).build(),
-                        ":cid", AttributeValue.builder().s(companyId).build(),
-                        ":reason", AttributeValue.builder().s(personalReason).build()
-                ))
-                .limit(1)
-                .build();
-        System.out.println("checked for personal reason for this company");
-        return !dynamoDb.query(request).items().isEmpty();
+    public boolean userHasPersonalReason(String userId, String companyId, String personalReason) {
+        try {
+            QueryRequest queryRequest = QueryRequest.builder()
+                    .tableName("user_boycotts")
+                    .keyConditionExpression("user_id = :uid")
+                    .expressionAttributeValues(Map.of(":uid", AttributeValue.fromS(userId)))
+                    .build();
+
+            QueryResponse response = dynamoDb.query(queryRequest);
+
+            return response.items().stream().anyMatch(item ->
+                    item.containsKey("company_id") &&
+                            item.get("company_id").s().equals(companyId) &&
+                            item.containsKey("personal_reason") &&
+                            !item.get("personal_reason").s().isBlank() &&
+                            item.get("personal_reason").s().equalsIgnoreCase(personalReason)
+            );
+
+        } catch (DynamoDbException e) {
+            // optionally log or rethrow
+            return false;
+        }
     }
+
 
     private boolean userIsFollowingCause(String userId, String causeId) {
         QueryRequest request = QueryRequest.builder()
