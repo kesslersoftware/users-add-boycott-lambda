@@ -5,9 +5,11 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 
+import com.boycottpro.models.ResponseMessage;
 import com.boycottpro.userboycotts.model.AddBoycottForm;
 import com.boycottpro.utilities.CauseValidator;
 import com.boycottpro.utilities.CompanyValidator;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
@@ -215,11 +217,19 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
         }
     }
 
-    private APIGatewayProxyResponseEvent response(int status, String body) {
+    private APIGatewayProxyResponseEvent response(int status, String body)  {
+        ResponseMessage message = new ResponseMessage(status,body,
+                body);
+        String responseBody = null;
+        try {
+            responseBody = objectMapper.writeValueAsString(message);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
         return new APIGatewayProxyResponseEvent()
                 .withStatusCode(status)
                 .withHeaders(Map.of("Content-Type", "application/json"))
-                .withBody(body);
+                .withBody(responseBody);
     }
 
     public boolean findCauseCompanyRecord(String causeId, String companyId) {
