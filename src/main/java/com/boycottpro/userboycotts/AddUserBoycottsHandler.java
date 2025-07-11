@@ -33,6 +33,7 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
         try {
             AddBoycottForm input = objectMapper.readValue(event.getBody(), AddBoycottForm.class);
+            System.out.println("AddBoycottForm = " + input);
             String userId = input.getUser_id();
             String companyId = input.getCompany_id();
             String companyName = input.getCompany_name();
@@ -213,6 +214,7 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
             }
 
         } catch (Exception e) {
+            e.printStackTrace();
             return response(500, "Transaction failed: " + e.getMessage());
         }
     }

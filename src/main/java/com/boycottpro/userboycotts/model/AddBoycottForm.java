@@ -49,6 +49,17 @@ public class AddBoycottForm {
         this.personal_reason = personal_reason;
     }
 
+    @Override
+    public String toString() {
+        return "AddBoycottForm{" +
+                "user_id='" + user_id + '\'' +
+                ", company_id='" + company_id + '\'' +
+                ", company_name='" + company_name + '\'' +
+                ", reasons=" + reasons +
+                ", personal_reason='" + personal_reason + '\'' +
+                '}';
+    }
+
     public static class Reason {
         private String cause_id;
         private String cause_desc;

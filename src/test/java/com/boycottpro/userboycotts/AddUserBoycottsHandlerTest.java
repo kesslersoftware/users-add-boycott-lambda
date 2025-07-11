@@ -1,6 +1,7 @@
 package com.boycottpro.userboycotts;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
+import com.boycottpro.models.ResponseMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -76,6 +77,7 @@ public class AddUserBoycottsHandlerTest {
         when(dynamoDbMock.updateItem(any(UpdateItemRequest.class))).thenReturn(UpdateItemResponse.builder().build());
 
         var response = handler.handleRequest(request, mock(Context.class));
+        ResponseMessage message = objectMapper.readValue(response.getBody(), ResponseMessage.class);
         assertEquals(200, response.getStatusCode());
     }
 
