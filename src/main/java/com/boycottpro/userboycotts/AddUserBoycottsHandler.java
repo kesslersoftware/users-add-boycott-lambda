@@ -52,6 +52,7 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
             }
             String now = Instant.now().toString();
             boolean userHasBoycott = userHasAnyBoycott(userId, companyId);
+            System.out.println("user has boycott = " + userHasBoycott);
             boolean anySuccess = false;
             List<String> errors = new ArrayList<>();
 
@@ -161,7 +162,7 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
                     errors.add("Failed to record boycott for cause: " + causeId + " -> " + e.getMessage());
                 }
             }
-
+            System.out.println("checking personalReason = " + personalReason);
             // C: Personal reason
             if (personalReason != null && !personalReason.isBlank()
                     && !userHasPersonalReason(userId, companyId, personalReason)) {
@@ -206,8 +207,10 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
             }
 
             if (!anySuccess) {
+                System.out.println("returning a 409 code");
                 return response(409, "No new boycotts were recorded. Possible duplicates.");
             } else if (!errors.isEmpty()) {
+                System.out.println("returning a 207 code");
                 return response(207, "Some boycotts recorded. Errors: " + objectMapper.writeValueAsString(errors));
             } else {
                 return response(200, "All boycotts recorded successfully.");
@@ -298,17 +301,19 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
                     .build();
 
             QueryResponse response = dynamoDb.query(queryRequest);
-
-            return response.items().stream().anyMatch(item ->
+            boolean alreadyHasPersonalReason = response.items().stream().anyMatch(item ->
                     item.containsKey("company_id") &&
                             item.get("company_id").s().equals(companyId) &&
                             item.containsKey("personal_reason") &&
                             !item.get("personal_reason").s().isBlank() &&
                             item.get("personal_reason").s().equalsIgnoreCase(personalReason)
             );
+            System.out.println("alreadyHasPersonalReason = " + alreadyHasPersonalReason);
+            return alreadyHasPersonalReason;
 
         } catch (DynamoDbException e) {
-            // optionally log or rethrow
+            System.out.println("issue checking the personal reason");
+            e.printStackTrace();
             return false;
         }
     }
