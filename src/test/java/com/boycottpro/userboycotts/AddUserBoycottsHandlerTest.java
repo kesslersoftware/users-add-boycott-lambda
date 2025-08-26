@@ -12,6 +12,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -38,7 +39,7 @@ public class AddUserBoycottsHandlerTest {
     public void testAllNewBoycottsRecorded() throws Exception {
         String body = """
             {
-              "user_id": "user1",
+              "user_id": null,
               "company_id": "comp1",
               "company_name" : "this company",
               "reasons": [
@@ -49,7 +50,14 @@ public class AddUserBoycottsHandlerTest {
             }
         """;
 
-        APIGatewayProxyRequestEvent request = new APIGatewayProxyRequestEvent().withBody(body);
+        APIGatewayProxyRequestEvent event = new APIGatewayProxyRequestEvent().withBody(body);
+        Map<String, String> claims = Map.of("sub", "11111111-2222-3333-4444-555555555555");
+        Map<String, Object> authorizer = new HashMap<>();
+        authorizer.put("claims", claims);
+
+        APIGatewayProxyRequestEvent.ProxyRequestContext rc = new APIGatewayProxyRequestEvent.ProxyRequestContext();
+        rc.setAuthorizer(authorizer);
+        event.setRequestContext(rc);
         Map<String, AttributeValue> company = Map.of(
                 "company_name", AttributeValue.fromS("this company")
         );
@@ -76,7 +84,7 @@ public class AddUserBoycottsHandlerTest {
                 .thenReturn(TransactWriteItemsResponse.builder().build());
         when(dynamoDbMock.updateItem(any(UpdateItemRequest.class))).thenReturn(UpdateItemResponse.builder().build());
 
-        var response = handler.handleRequest(request, mock(Context.class));
+        var response = handler.handleRequest(event, mock(Context.class));
         ResponseMessage message = objectMapper.readValue(response.getBody(), ResponseMessage.class);
         assertEquals(200, response.getStatusCode());
     }
@@ -85,7 +93,7 @@ public class AddUserBoycottsHandlerTest {
     public void testAllDuplicates() throws Exception {
         String body = """
             {
-              "user_id": "user1",
+              "user_id": null,
               "company_id": "comp1",
               "company_name" : "this company",
               "reasons": [
@@ -95,7 +103,14 @@ public class AddUserBoycottsHandlerTest {
             }
         """;
 
-        APIGatewayProxyRequestEvent request = new APIGatewayProxyRequestEvent().withBody(body);
+        APIGatewayProxyRequestEvent event = new APIGatewayProxyRequestEvent().withBody(body);
+        Map<String, String> claims = Map.of("sub", "11111111-2222-3333-4444-555555555555");
+        Map<String, Object> authorizer = new HashMap<>();
+        authorizer.put("claims", claims);
+
+        APIGatewayProxyRequestEvent.ProxyRequestContext rc = new APIGatewayProxyRequestEvent.ProxyRequestContext();
+        rc.setAuthorizer(authorizer);
+        event.setRequestContext(rc);
         Map<String, AttributeValue> company = Map.of(
                 "company_name", AttributeValue.fromS("this company")
         );
@@ -112,7 +127,7 @@ public class AddUserBoycottsHandlerTest {
                 .thenReturn(cause1Response);
         when(dynamoDbMock.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().count(1).build());
 
-        var response = handler.handleRequest(request, mock(Context.class));
+        var response = handler.handleRequest(event, mock(Context.class));
         assertEquals(200, response.getStatusCode());
     }
 
@@ -120,7 +135,7 @@ public class AddUserBoycottsHandlerTest {
     public void testAllFailures() throws Exception {
         String body = """
             {
-              "user_id": "user1",
+              "user_id": null,
               "company_id": "comp1",
               "company_name" : "this company",
               "reasons": [
@@ -130,7 +145,14 @@ public class AddUserBoycottsHandlerTest {
             }
         """;
 
-        APIGatewayProxyRequestEvent request = new APIGatewayProxyRequestEvent().withBody(body);
+        APIGatewayProxyRequestEvent event = new APIGatewayProxyRequestEvent().withBody(body);
+        Map<String, String> claims = Map.of("sub", "11111111-2222-3333-4444-555555555555");
+        Map<String, Object> authorizer = new HashMap<>();
+        authorizer.put("claims", claims);
+
+        APIGatewayProxyRequestEvent.ProxyRequestContext rc = new APIGatewayProxyRequestEvent.ProxyRequestContext();
+        rc.setAuthorizer(authorizer);
+        event.setRequestContext(rc);
         Map<String, AttributeValue> company = Map.of(
                 "company_name", AttributeValue.fromS("this company")
         );
@@ -148,7 +170,7 @@ public class AddUserBoycottsHandlerTest {
         when(dynamoDbMock.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().count(0).build());
         when(dynamoDbMock.transactWriteItems(any(TransactWriteItemsRequest.class)))
                 .thenThrow(new RuntimeException("Failed transaction", null));
-        var response = handler.handleRequest(request, mock(Context.class));
+        var response = handler.handleRequest(event, mock(Context.class));
         assertEquals(409, response.getStatusCode());
     }
 
@@ -156,7 +178,7 @@ public class AddUserBoycottsHandlerTest {
     public void testPartialSuccess() throws Exception {
         String body = """
             {
-              "user_id": "user1",
+              "user_id": null,
               "company_id": "comp1",
               "company_name" : "this company",
               "reasons": [
@@ -167,7 +189,14 @@ public class AddUserBoycottsHandlerTest {
             }
         """;
 
-        APIGatewayProxyRequestEvent request = new APIGatewayProxyRequestEvent().withBody(body);
+        APIGatewayProxyRequestEvent event = new APIGatewayProxyRequestEvent().withBody(body);
+        Map<String, String> claims = Map.of("sub", "11111111-2222-3333-4444-555555555555");
+        Map<String, Object> authorizer = new HashMap<>();
+        authorizer.put("claims", claims);
+
+        APIGatewayProxyRequestEvent.ProxyRequestContext rc = new APIGatewayProxyRequestEvent.ProxyRequestContext();
+        rc.setAuthorizer(authorizer);
+        event.setRequestContext(rc);
         Map<String, AttributeValue> company = Map.of(
                 "company_name", AttributeValue.fromS("this company")
         );
@@ -196,7 +225,7 @@ public class AddUserBoycottsHandlerTest {
                 .thenReturn(TransactWriteItemsResponse.builder().build())  // Success for c1
                 .thenThrow(new RuntimeException("Failed transaction", null)); // Fail for c2
 
-        var response = handler.handleRequest(request, mock(Context.class));
+        var response = handler.handleRequest(event, mock(Context.class));
         assertEquals(207, response.getStatusCode());
     }
 }

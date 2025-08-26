@@ -9,6 +9,7 @@ import com.boycottpro.models.ResponseMessage;
 import com.boycottpro.userboycotts.model.AddBoycottForm;
 import com.boycottpro.utilities.CauseValidator;
 import com.boycottpro.utilities.CompanyValidator;
+import com.boycottpro.utilities.JwtUtility;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -32,17 +33,15 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
     @Override
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
         try {
+            String sub = JwtUtility.getSubFromRestEvent(event);
+            if (sub == null) return response(401, "Unauthorized");
             AddBoycottForm input = objectMapper.readValue(event.getBody(), AddBoycottForm.class);
+            input.setUser_id(sub);
             System.out.println("AddBoycottForm = " + input);
-            String userId = input.getUser_id();
             String companyId = input.getCompany_id();
             String companyName = input.getCompany_name();
             List<AddBoycottForm.Reason> reasons = input.getReasons();
             String personalReason = input.getPersonal_reason();
-            if (userId == null || companyId == null ||
-                    ((reasons == null || reasons.isEmpty()) && (personalReason == null || personalReason.isBlank()))) {
-                return response(400, "Either reasons or personal_reason must be provided.");
-            }
             // validate company_id
             CompanyValidator companyValidator = new CompanyValidator(this.dynamoDb,"companies");
             boolean validCompany = companyValidator.validateCompanyName(companyId,companyName);
@@ -51,7 +50,7 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
                 throw new RuntimeException("not a valid company!");
             }
             String now = Instant.now().toString();
-            boolean userHasBoycott = userHasAnyBoycott(userId, companyId);
+            boolean userHasBoycott = userHasAnyBoycott(sub, companyId);
             System.out.println("user has boycott = " + userHasBoycott);
             boolean anySuccess = false;
             List<String> errors = new ArrayList<>();
@@ -60,7 +59,7 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
             for (AddBoycottForm.Reason reason : reasons) {
                 String causeId = reason.getCause_id();
                 System.out.println("reason = " + causeId);
-                if (userHasSpecificBoycott(userId, companyId, causeId)) {
+                if (userHasSpecificBoycott(sub, companyId, causeId)) {
                     System.out.println("user has a specific boycott for cause ID = " + causeId);
                     continue;
                 }
@@ -76,7 +75,7 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
                 actions.add(TransactWriteItem.builder()
                         .put(Put.builder().tableName("user_boycotts")
                                 .item(Map.of(
-                                        "user_id", AttributeValue.fromS(userId),
+                                        "user_id", AttributeValue.fromS(sub),
                                         "company_id", AttributeValue.fromS(companyId),
                                         "company_name", AttributeValue.fromS(companyName),
                                         "cause_id", AttributeValue.fromS(causeId),
@@ -86,12 +85,12 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
                                 )).build()).build());
                 System.out.println("user_boycotts added");
                 // user_causes record if not already following
-                if (!userIsFollowingCause(userId, causeId)) {
+                if (!userIsFollowingCause(sub, causeId)) {
                     System.out.println("user is not following this cause");
                     actions.add(TransactWriteItem.builder()
                             .put(Put.builder().tableName("user_causes")
                                     .item(Map.of(
-                                            "user_id", AttributeValue.fromS(userId),
+                                            "user_id", AttributeValue.fromS(sub),
                                             "cause_id", AttributeValue.fromS(causeId),
                                             "cause_desc", AttributeValue.fromS(reason.getCause_desc()),
                                             "timestamp", AttributeValue.fromS(now)
@@ -165,14 +164,14 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
             System.out.println("checking personalReason = " + personalReason);
             // C: Personal reason
             if (personalReason != null && !personalReason.isBlank()
-                    && !userHasPersonalReason(userId, companyId, personalReason)) {
+                    && !userHasPersonalReason(sub, companyId, personalReason)) {
                 System.out.println("user does not have this personal reason");
                 List<TransactWriteItem> actions = List.of(
                         TransactWriteItem.builder()
                                 .put(Put.builder()
                                         .tableName("user_boycotts")
                                         .item(Map.of(
-                                                "user_id", AttributeValue.fromS(userId),
+                                                "user_id", AttributeValue.fromS(sub),
                                                 "company_id", AttributeValue.fromS(companyId),
                                                 "company_name", AttributeValue.fromS(companyName),
                                                 "company_cause_id", AttributeValue.fromS(personalReason+"#"+companyId),
