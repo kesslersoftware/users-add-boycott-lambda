@@ -32,9 +32,10 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
 
     @Override
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
+        String sub = null;
         try {
-            String sub = JwtUtility.getSubFromRestEvent(event);
-            if (sub == null) return response(401, "Unauthorized");
+            sub = JwtUtility.getSubFromRestEvent(event);
+            if (sub == null) return response(401, Map.of("message", "Unauthorized"));
             AddBoycottForm input = objectMapper.readValue(event.getBody(), AddBoycottForm.class);
             input.setUser_id(sub);
             System.out.println("AddBoycottForm = " + input);
@@ -207,26 +208,27 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
 
             if (!anySuccess) {
                 System.out.println("returning a 409 code");
-                return response(409, "No new boycotts were recorded. Possible duplicates.");
+                return response(409, Map.of("message",
+                        "No new boycotts were recorded. Possible duplicates."));
             } else if (!errors.isEmpty()) {
                 System.out.println("returning a 207 code");
-                return response(207, "Some boycotts recorded. Errors: " + objectMapper.writeValueAsString(errors));
+                return response(207, Map.of("message",
+                        "Some boycotts recorded. Errors: " + objectMapper.writeValueAsString(errors)));
             } else {
-                return response(200, "All boycotts recorded successfully.");
+                return response(200, Map.of("message",
+                        "All boycotts recorded successfully."));
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
-            return response(500, "Transaction failed: " + e.getMessage());
+            System.out.println(e.getMessage() + " for user " + sub);
+            return response(500,Map.of("error", "Unexpected server error: " + e.getMessage()) );
         }
     }
 
-    private APIGatewayProxyResponseEvent response(int status, String body)  {
-        ResponseMessage message = new ResponseMessage(status,body,
-                body);
+    private APIGatewayProxyResponseEvent response(int status, Object body) {
         String responseBody = null;
         try {
-            responseBody = objectMapper.writeValueAsString(message);
+            responseBody = objectMapper.writeValueAsString(body);
         } catch (JsonProcessingException e) {
             throw new RuntimeException(e);
         }
