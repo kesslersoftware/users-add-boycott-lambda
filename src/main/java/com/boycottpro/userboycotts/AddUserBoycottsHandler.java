@@ -10,6 +10,7 @@ import com.boycottpro.userboycotts.model.AddBoycottForm;
 import com.boycottpro.utilities.CauseValidator;
 import com.boycottpro.utilities.CompanyValidator;
 import com.boycottpro.utilities.JwtUtility;
+import com.boycottpro.utilities.Logger;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -33,46 +34,48 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
     @Override
     public APIGatewayProxyResponseEvent handleRequest(APIGatewayProxyRequestEvent event, Context context) {
         String sub = null;
+        int lineNum = 37;
         try {
             sub = JwtUtility.getSubFromRestEvent(event);
-            if (sub == null) return response(401, Map.of("message", "Unauthorized"));
+            if (sub == null) {
+            Logger.error(41, sub, "user is Unauthorized");
+            return response(401, Map.of("message", "Unauthorized"));
+            }
+            lineNum = 44;
             AddBoycottForm input = objectMapper.readValue(event.getBody(), AddBoycottForm.class);
             input.setUser_id(sub);
-            System.out.println("AddBoycottForm = " + input);
             String companyId = input.getCompany_id();
             String companyName = input.getCompany_name();
             List<AddBoycottForm.Reason> reasons = input.getReasons();
             String personalReason = input.getPersonal_reason();
             // validate company_id
             CompanyValidator companyValidator = new CompanyValidator(this.dynamoDb,"companies");
+            lineNum = 53;
             boolean validCompany = companyValidator.validateCompanyName(companyId,companyName);
+            lineNum = 55;
             if(!validCompany) {
-                System.out.println("company_name do not match!");
                 throw new RuntimeException("not a valid company!");
             }
+            lineNum = 59;
             String now = Instant.now().toString();
             boolean userHasBoycott = userHasAnyBoycott(sub, companyId);
-            System.out.println("user has boycott = " + userHasBoycott);
+            lineNum = 62;
             boolean anySuccess = false;
             List<String> errors = new ArrayList<>();
-
-            // B: Reason-based boycotts
             for (AddBoycottForm.Reason reason : reasons) {
                 String causeId = reason.getCause_id();
-                System.out.println("reason = " + causeId);
+                lineNum = 67;
                 if (userHasSpecificBoycott(sub, companyId, causeId)) {
-                    System.out.println("user has a specific boycott for cause ID = " + causeId);
                     continue;
                 }
                 CauseValidator causeValidator = new CauseValidator(this.dynamoDb,"causes");
+                lineNum = 72;
                 boolean validCause = causeValidator.validateCauseDescription(causeId, reason.getCause_desc());
+                lineNum = 74;
                 if(!validCause) {
-                    System.out.println("cause ID = " + causeId + " is not valid!");
                     continue;
                 }
                 List<TransactWriteItem> actions = new ArrayList<>();
-
-                // user_boycotts record
                 actions.add(TransactWriteItem.builder()
                         .put(Put.builder().tableName("user_boycotts")
                                 .item(Map.of(
@@ -84,10 +87,9 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
                                         "company_cause_id", AttributeValue.fromS(companyId+"#"+causeId),
                                         "timestamp", AttributeValue.fromS(now)
                                 )).build()).build());
-                System.out.println("user_boycotts added");
-                // user_causes record if not already following
+                lineNum = 90;
                 if (!userIsFollowingCause(sub, causeId)) {
-                    System.out.println("user is not following this cause");
+                    lineNum = 92;
                     actions.add(TransactWriteItem.builder()
                             .put(Put.builder().tableName("user_causes")
                                     .item(Map.of(
@@ -96,8 +98,7 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
                                             "cause_desc", AttributeValue.fromS(reason.getCause_desc()),
                                             "timestamp", AttributeValue.fromS(now)
                                     )).build()).build());
-                    System.out.println("user_causes added");
-                    // causes update
+                    lineNum = 101;
                     actions.add(TransactWriteItem.builder()
                             .update(Update.builder()
                                     .tableName("causes")
@@ -108,11 +109,11 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
                                             ":inc", AttributeValue.fromN("1")
                                     ))
                                     .build()).build());
-                    System.out.println("causes added");
+                    lineNum = 112;
                 }
-                // cause_company_stats update
+                lineNum = 114;
                 if (findCauseCompanyRecord(causeId, companyId)) {
-                    // update existing record
+                    lineNum = 116;
                     actions.add(
                             TransactWriteItem.builder()
                                     .update(Update.builder()
@@ -130,7 +131,7 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
                                     .build()
                     );
                 } else {
-                    // insert new record
+                    lineNum = 134;
                     actions.add(
                             TransactWriteItem.builder()
                                     .put(Put.builder()
@@ -146,27 +147,22 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
                                     .build()
                     );
                 }
-                System.out.println("cause_company_stats added");
+                lineNum = 150;
                 try {
-                    // Execute this transaction
-                    System.out.println("Execute this transaction");
-                    for(TransactWriteItem action : actions) {
-                        System.out.println(action.toString());
-                    }
+                    lineNum = 152;
                     dynamoDb.transactWriteItems(TransactWriteItemsRequest.builder()
                             .transactItems(actions).build());
                     anySuccess = true;
-                    System.out.println("transaction successful for cause = " + causeId);
+                    lineNum = 156;
                 } catch (RuntimeException e) {
-                    e.printStackTrace();
+                    Logger.error(lineNum, sub, "Failed to record boycott for cause: " + causeId + " -> " + e.getMessage());
                     errors.add("Failed to record boycott for cause: " + causeId + " -> " + e.getMessage());
                 }
             }
-            System.out.println("checking personalReason = " + personalReason);
-            // C: Personal reason
+            lineNum = 162;
             if (personalReason != null && !personalReason.isBlank()
                     && !userHasPersonalReason(sub, companyId, personalReason)) {
-                System.out.println("user does not have this personal reason");
+                lineNum = 165;
                 List<TransactWriteItem> actions = List.of(
                         TransactWriteItem.builder()
                                 .put(Put.builder()
@@ -180,23 +176,21 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
                                                 "personal_reason", AttributeValue.fromS(personalReason)
                                         )).build()).build()
                 );
-                System.out.println("user_boycotts added");
+                lineNum = 179;
                 try {
-                    // Execute this transaction
-                    System.out.println("Execute this transaction for personal reasons");
                     dynamoDb.transactWriteItems(TransactWriteItemsRequest.builder()
                             .transactItems(actions).build());
                     anySuccess = true;
-                    System.out.println("transaction successful for personal reason = " + personalReason);
+                    lineNum = 184;
                 } catch (RuntimeException e) {
-                    e.printStackTrace();
-                    errors.add("Failed to record boycott for personal reason: " + personalReason + " -> " + e.getMessage());
+                    Logger.error(lineNum, sub,
+                            "Failed to record boycott for personal reason: " + personalReason + " -> " + e.getMessage());
+                            errors.add("Failed to record boycott for personal reason: " + personalReason + " -> " + e.getMessage());
                 }
             }
-
-            // D: Company update
+            lineNum = 191;
             if (!userHasBoycott && anySuccess) {
-                System.out.println("going to increment companies record");
+                lineNum = 193;
                 dynamoDb.updateItem(UpdateItemRequest.builder()
                         .tableName("companies")
                         .key(Map.of("company_id", AttributeValue.fromS(companyId)))
@@ -205,22 +199,25 @@ public class AddUserBoycottsHandler implements RequestHandler<APIGatewayProxyReq
                                 ":inc", AttributeValue.fromN("1")
                         )).build());
             }
-
+            lineNum = 202;
             if (!anySuccess) {
-                System.out.println("returning a 409 code");
+                Logger.error(lineNum, sub,
+                        "No new boycotts were recorded. Possible duplicates.");
                 return response(409, Map.of("message",
                         "No new boycotts were recorded. Possible duplicates."));
             } else if (!errors.isEmpty()) {
-                System.out.println("returning a 207 code");
+                Logger.error(lineNum, sub,
+                        "Some boycotts recorded. Errors: " + objectMapper.writeValueAsString(errors));
                 return response(207, Map.of("message",
                         "Some boycotts recorded. Errors: " + objectMapper.writeValueAsString(errors)));
             } else {
+                lineNum = 214;
                 return response(200, Map.of("message",
                         "All boycotts recorded successfully."));
             }
 
         } catch (Exception e) {
-            System.out.println(e.getMessage() + " for user " + sub);
+            Logger.error(lineNum, sub, e.getMessage());
             return response(500,Map.of("error", "Unexpected server error: " + e.getMessage()) );
         }
     }
